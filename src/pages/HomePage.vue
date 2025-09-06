@@ -2,9 +2,14 @@
 import { ref, onMounted } from 'vue'
 import AppointmentList from '@/components/appointments/AppointmentList.vue'
 import type { AppointmentItem } from '@/components/appointments/AppointmentListItem.vue'
-import { listAppointments} from '@/services/appointments'
+import FilterToolbar, { type FilterState } from '@/components/appointments/FilterToolbar.vue'
+import Modal from '@/components/ui/Modal.vue'
+import CreateAppointmentForm from '@/components/appointments/CreateAppointmentForm.vue'
+import EditAppointmentForm from '@/components/appointments/EditAppointmentForm.vue'
+import { listAppointments, createAppointment, updateAppointment } from '@/services/appointments'
 import { listAgents } from '@/services/agents'
 
+const appointments = ref<AppointmentItem[]>([])
 const allAppointments = ref<AppointmentItem[]>([]) // Cache all data
 const loading = ref(false)
 const agents = ref<any[]>([])
@@ -14,16 +19,27 @@ const currentPage = ref(1)
 const totalPages = ref(0)
 const totalItems = ref(0)
 
+const filters = ref<FilterState>({
+  status: 'All Statuses',
+  agentIds: [],
+  query: '',
+  from: '',
+  to: '',
+  sortBy: 'date-desc'
+})
+
 async function fetchAllAppointments() {
   if (loading.value) return
   
   loading.value = true
   try {
     const res = await listAppointments()
-    console.log('Fetched appointments:', res)
+    
     // The API should return all items already processed
     allAppointments.value = res.items as any
     
+    // Apply initial filtering and pagination
+    applyFiltersAndPagination()
   } catch (error) {
     console.error('Failed to fetch appointments:', error)
   } finally {
@@ -31,8 +47,99 @@ async function fetchAllAppointments() {
   }
 }
 
+function applyFiltersAndPagination() {
+  // This function does ALL filtering and pagination on cached data
+  let filteredItems = [...allAppointments.value]
+  
+  // Apply status filter
+  if (filters.value.status !== 'All Statuses') {
+    filteredItems = filteredItems.filter(item => item.status === filters.value.status)
+  }
 
+  // Apply agent filter
+  if (filters.value.agentIds.length) {
+    const selectedAgentNames = filters.value.agentIds.map(id => {
+      const agent = agents.value.find(a => a.id === id)
+      return agent ? agent.fullName : id
+    })
+    
+    filteredItems = filteredItems.filter(item => 
+      item.agents.some(appointmentAgent => 
+        selectedAgentNames.some(selectedName => 
+          appointmentAgent.name.toLowerCase().includes(selectedName.toLowerCase()) ||
+          selectedName.toLowerCase().includes(appointmentAgent.name.toLowerCase())
+        )
+      )
+    )
+  }
 
+  // Apply search query - case insensitive
+  if (filters.value.query) {
+    const q = filters.value.query.toLowerCase()
+    filteredItems = filteredItems.filter(item => 
+      item.address.toLowerCase().includes(q) ||
+      item.contact.name.toLowerCase().includes(q) ||
+      (item.contact.email && item.contact.email.toLowerCase().includes(q)) ||
+      (item.contact.phone && item.contact.phone.toLowerCase().includes(q))
+    )
+  }
+
+  // Apply date range filter
+  if (filters.value.from || filters.value.to) {
+    filteredItems = filteredItems.filter(item => {
+      const itemDate = new Date(item.date)
+      let matchesRange = true
+      
+      if (filters.value.from) {
+        const fromDate = new Date(filters.value.from)
+        matchesRange = matchesRange && itemDate >= fromDate
+      }
+      
+      if (filters.value.to) {
+        const toDate = new Date(filters.value.to)
+        toDate.setHours(23, 59, 59, 999) // End of day
+        matchesRange = matchesRange && itemDate <= toDate
+      }
+      
+      return matchesRange
+    })
+  }
+
+  // Apply sorting
+  filteredItems.sort((a, b) => {
+    const dateA = new Date(a.date)
+    const dateB = new Date(b.date)
+    return filters.value.sortBy === 'date-desc' ? 
+      dateB.getTime() - dateA.getTime() : 
+      dateA.getTime() - dateB.getTime()
+  })
+
+  // Calculate pagination
+  const pageSize = 10
+  const startIndex = (currentPage.value - 1) * pageSize
+  const endIndex = startIndex + pageSize
+  
+  // Update reactive values
+  totalItems.value = filteredItems.length
+  totalPages.value = Math.ceil(filteredItems.length / pageSize)
+  appointments.value = filteredItems.slice(startIndex, endIndex)
+  
+}
+
+function onPageChange(page: number) {
+  if (page >= 1 && page <= totalPages.value && page !== currentPage.value) {
+    currentPage.value = page
+    // NO API call needed - just re-apply filtering/pagination on cached data
+    applyFiltersAndPagination()
+  }
+}
+
+function applyFilters() {
+  // Reset to first page when filters change
+  currentPage.value = 1
+  // NO API call needed - just re-apply filtering/pagination on cached data
+  applyFiltersAndPagination()
+}
 
 onMounted(async () => {
   // Load agents first for filtering
@@ -47,8 +154,46 @@ onMounted(async () => {
 })
 
 const showCreate = ref(false)
+const showEdit = ref(false)
+const editingAppointment = ref<AppointmentItem | null>(null)
+const createLoading = ref(false)
+const updateLoading = ref(false)
 
+async function onCreate(payload: { contactId: string; address: string; agentIds: string[]; datetime: string; status?: 'Upcoming' | 'Completed' | 'Cancelled' }) {
+  createLoading.value = true
+  try {
+    await createAppointment(payload)
+    showCreate.value = false
+    
+    // Refresh all data after create
+    fetchAllAppointments()
+  } catch (error) {
+    console.error('Failed to create appointment:', error)
+  } finally {
+    createLoading.value = false
+  }
+}
 
+function onEdit(appointment: AppointmentItem) {
+  editingAppointment.value = appointment
+  showEdit.value = true
+}
+
+async function onUpdate(id: string, payload: Partial<{ contactId: string; address: string; agentIds: string[]; datetime: string; status?: 'Upcoming' | 'Completed' | 'Cancelled' }>) {
+  updateLoading.value = true
+  try {
+    await updateAppointment(id, payload)
+    showEdit.value = false
+    editingAppointment.value = null
+    
+    // Refresh all data after update
+    fetchAllAppointments()
+  } catch (error) {
+    console.error('Failed to update appointment:', error)
+  } finally {
+    updateLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -60,6 +205,10 @@ const showCreate = ref(false)
 
     <!-- Main Content Container -->
     <div class="main-container">
+      <!-- Filters -->
+      <FilterToolbar 
+        v-model="filters" 
+        @search="applyFilters" />
 
       <!-- Separator -->
       <hr class="content-separator" />
@@ -80,13 +229,29 @@ const showCreate = ref(false)
 
       <!-- Appointments List -->
       <AppointmentList 
-        :items="allAppointments" 
+        :items="appointments" 
         :loading="loading"
         :totalPages="totalPages"
         :currentPage="currentPage"
-        :totalItems="totalItems" />
+        :totalItems="totalItems"
+        @pageChange="onPageChange"
+        @edit="onEdit" 
+        @view="onEdit" />
     </div>
 
+    <!-- Create Modal -->
+    <Modal v-model="showCreate" title="Create an Appointment">
+      <CreateAppointmentForm @submit="onCreate" @cancel="showCreate = false" />
+    </Modal>
+
+    <!-- Edit Modal -->
+    <Modal v-model="showEdit" title="Edit Appointment">
+      <EditAppointmentForm 
+        v-if="editingAppointment" 
+        :appointment="editingAppointment"
+        @submit="onUpdate" 
+        @cancel="showEdit = false; editingAppointment = null" />
+    </Modal>
   </div>
 </template>
 
