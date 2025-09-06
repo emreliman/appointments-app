@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import AppointmentListItem, { type AppointmentItem } from './AppointmentListItem.vue'
 
 const props = withDefaults(defineProps<{ 
   items: AppointmentItem[]
   loading?: boolean
+  totalPages?: number
+  currentPage?: number
   totalItems?: number
 }>(), { 
   loading: false,
@@ -18,8 +21,48 @@ defineEmits<{
   (e: 'view', item: AppointmentItem): void
 }>()
 
+// Generate pagination numbers to display
+const paginationNumbers = computed(() => {
+  const current = props.currentPage
+  const total = props.totalPages
+  const delta = 2 // number of pages to show around current page
+  
+  if (total <= 7) {
+    // Show all pages if total is small
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  
+  const numbers = []
+  
+  // Always show first page
+  numbers.push(1)
+  
+  if (current > delta + 2) {
+    numbers.push('...')
+  }
+  
+  // Show pages around current page
+  const start = Math.max(2, current - delta)
+  const end = Math.min(total - 1, current + delta)
+  
+  for (let i = start; i <= end; i++) {
+    numbers.push(i)
+  }
+  
+  if (current < total - delta - 1) {
+    numbers.push('...')
+  }
+  
+  // Always show last page if total > 1
+  if (total > 1) {
+    numbers.push(total)
+  }
+  
+  return numbers
+})
 
-
+// Type guard to narrow pagination items
+const isPageNumber = (p: number | string): p is number => typeof p === 'number'
 </script>
 
 <template>
@@ -47,6 +90,48 @@ defineEmits<{
         @view="$emit('view', $event)"
       />
         
+      <!-- Pagination Controls -->
+      <div class="pagination-container" v-if="totalPages > 0">
+        <div class="pagination-info">
+          Showing {{ ((currentPage - 1) * 10) + 1 }}-{{ Math.min(currentPage * 10, totalItems) }} of {{ totalItems }} appointments
+        </div>
+        
+        <div class="pagination">
+          <!-- Previous Button -->
+          <button 
+            class="pagination-btn"
+            :class="{ disabled: currentPage <= 1 || loading }"
+            @click="$emit('pageChange', currentPage - 1)"
+            :disabled="currentPage <= 1 || loading"
+          >
+            ‹ Previous
+          </button>
+          
+          <!-- Page Numbers -->
+          <template v-for="(page, index) in paginationNumbers" :key="index">
+            <span v-if="!isPageNumber(page)" class="pagination-ellipsis">...</span>
+            <button 
+              v-else
+              class="pagination-btn pagination-number"
+              :class="{ active: page === currentPage, disabled: loading }"
+              @click="$emit('pageChange', page)"
+              :disabled="loading"
+            >
+              {{ page }}
+            </button>
+          </template>
+          
+          <!-- Next Button -->
+          <button 
+            class="pagination-btn"
+            :class="{ disabled: currentPage >= totalPages || loading }"
+            @click="$emit('pageChange', currentPage + 1)"
+            :disabled="currentPage >= totalPages || loading"
+          >
+            Next ›
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
