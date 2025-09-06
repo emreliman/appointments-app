@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { listAgents, type Agent } from '@/services/agents'
 
-export interface FilterState {
+export type FilterState = {
   status: string
   agentIds: string[]
   query: string

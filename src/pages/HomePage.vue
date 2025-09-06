@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 import AppointmentList from '@/components/appointments/AppointmentList.vue'
 import type { AppointmentItem } from '@/components/appointments/AppointmentListItem.vue'
-import FilterToolbar, { type FilterState } from '@/components/appointments/FilterToolbar.vue'
+import FilterToolbar from '@/components/appointments/FilterToolbar.vue'
+import type { FilterState } from '@/components/appointments/FilterToolbar'
 import Modal from '@/components/ui/Modal.vue'
 import CreateAppointmentForm from '@/components/appointments/CreateAppointmentForm.vue'
 import EditAppointmentForm from '@/components/appointments/EditAppointmentForm.vue'
@@ -58,14 +59,14 @@ function applyFiltersAndPagination() {
 
   // Apply agent filter
   if (filters.value.agentIds.length) {
-    const selectedAgentNames = filters.value.agentIds.map(id => {
+    const selectedAgentNames = filters.value.agentIds.map((id: string) => {
       const agent = agents.value.find(a => a.id === id)
       return agent ? agent.fullName : id
     })
     
     filteredItems = filteredItems.filter(item => 
-      item.agents.some(appointmentAgent => 
-        selectedAgentNames.some(selectedName => 
+      item.agents.some((appointmentAgent: any) => 
+        selectedAgentNames.some((selectedName: string) => 
           appointmentAgent.name.toLowerCase().includes(selectedName.toLowerCase()) ||
           selectedName.toLowerCase().includes(appointmentAgent.name.toLowerCase())
         )
