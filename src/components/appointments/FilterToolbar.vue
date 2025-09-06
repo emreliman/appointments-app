@@ -21,21 +21,23 @@ const emit = defineEmits<{
 }>()
 
 const agents = ref<Agent[]>([])
-const searchTimeout = ref<NodeJS.Timeout | null>(null)
+const searchTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 
 onMounted(async () => {
   try {
     agents.value = await listAgents()
   } catch (e) {
     console.error('Failed to load agents:', e)
-    console.error('Error details:', e.message, e.stack)
+    if (e && typeof e === 'object' && 'message' in e) {
+      console.error('Error details:', (e as any).message, (e as any).stack)
+    }
     // No fallback data - show empty state
     agents.value = []
   }
 })
 
 // Watch for search query changes and debounce search
-watch(() => props.modelValue.query, (newQuery) => {
+watch(() => props.modelValue.query, () => {
   if (searchTimeout.value) {
     clearTimeout(searchTimeout.value)
   }
